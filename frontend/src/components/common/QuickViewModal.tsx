@@ -23,7 +23,7 @@ export const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose
 
   useEffect(() => {
     if (product) {
-      setSelectedWeight(product.variants[0]?.weight || '250g (8.8oz)');
+      setSelectedWeight(product.variants?.[0]?.weight || '250g (8.8oz)');
       setSelectedGrind('Whole Bean');
       setQuantity(1);
       setAdded(false);
@@ -36,22 +36,24 @@ export const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose
   const isOutOfStock = product.inventory <= 0;
 
   // Find active variant based on selected weight
-  const activeVariant: IProductVariant = product.variants.find(
+  const activeVariant: IProductVariant = product.variants?.find(
     v => v.weight === selectedWeight && v.grind === selectedGrind
-  ) || product.variants.find(v => v.weight === selectedWeight) || product.variants[0] || {
-    id: `${product.sku}-default`,
-    weight: selectedWeight,
-    grind: selectedGrind,
-    price: product.price,
-    salePrice: product.salePrice,
-    sku: product.sku,
-    stock: product.inventory
+  ) || product.variants?.find(v => v.weight === selectedWeight) || product.variants?.[0] || {
+    id: `${product.sku || 'KAV'}-default`,
+    weight: selectedWeight || '250g',
+    grind: selectedGrind || 'Whole Bean',
+    price: product.price || 0,
+    salePrice: product.salePrice || undefined,
+    sku: product.sku || 'KAV-DEF',
+    stock: product.inventory !== undefined ? product.inventory : 99
   };
 
   const currentPrice = activeVariant.salePrice || activeVariant.price || product.salePrice || product.price;
 
   // Unique weights available
-  const availableWeights = Array.from(new Set(product.variants.map(v => v.weight)));
+  const availableWeights = product.variants?.length
+    ? Array.from(new Set(product.variants.map(v => v.weight)))
+    : ['250g (8.8oz)', '500g (1.1lb)', '1kg (2.2lb)'];
   const grinds = ['Whole Bean', 'Filter / Drip', 'Espresso', 'French Press'];
 
   const handleAddToCart = () => {

@@ -65,14 +65,14 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [coupon]);
 
   const addItem = (product: IProduct, variant?: IProductVariant, quantity = 1) => {
-    const selectedVariant = variant || product.variants[0] || {
-      id: `${product.sku}-default`,
+    const selectedVariant = variant || (product.variants && product.variants.length > 0 ? product.variants[0] : null) || {
+      id: `${product.sku || 'KAV'}-default`,
       weight: '250g',
       grind: 'Whole Bean',
-      price: product.price,
-      salePrice: product.salePrice,
-      sku: product.sku,
-      stock: product.inventory
+      price: product.price || 0,
+      salePrice: product.salePrice || undefined,
+      sku: product.sku || 'KAV-DEF',
+      stock: product.inventory !== undefined ? product.inventory : 99
     };
 
     const unitPrice = selectedVariant.salePrice || selectedVariant.price || product.salePrice || product.price;

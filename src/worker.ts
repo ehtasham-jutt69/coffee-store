@@ -26,16 +26,66 @@ app.use('*', cors({
 // ==========================================
 // IN-MEMORY / EDGE STORE (High-performance fallback)
 // ==========================================
+function createProductVariants(sku: string, price: number, salePrice?: number | null, inventory: number = 40) {
+  return [
+    {
+      id: `${sku}-250G-WB`,
+      weight: '250g (8.8oz)',
+      grind: 'Whole Bean',
+      price: price,
+      salePrice: salePrice || undefined,
+      sku: `${sku}-250G-WB`,
+      stock: Math.floor(inventory * 0.4) || 20
+    },
+    {
+      id: `${sku}-250G-FLT`,
+      weight: '250g (8.8oz)',
+      grind: 'Filter / Drip',
+      price: price,
+      salePrice: salePrice || undefined,
+      sku: `${sku}-250G-FLT`,
+      stock: Math.floor(inventory * 0.3) || 15
+    },
+    {
+      id: `${sku}-500G-WB`,
+      weight: '500g (1.1lb)',
+      grind: 'Whole Bean',
+      price: Number((price * 1.85).toFixed(2)),
+      salePrice: salePrice ? Number((salePrice * 1.85).toFixed(2)) : undefined,
+      sku: `${sku}-500G-WB`,
+      stock: Math.floor(inventory * 0.3) || 15
+    }
+  ];
+}
+
 const memoryStore = {
   categories: seedCategories.map((c, i) => ({ ...c, _id: `cat_${i + 1}` })),
-  products: seedProducts.map((p, i) => ({
-    ...p,
-    _id: (p as any)._id || `prod_${i + 1}`,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    rating: (p as any).rating || 4.8,
-    reviewCount: (p as any).reviewCount || 15
-  })),
+  products: seedProducts.map((p, i) => {
+    const isEquipment = p.category === 'equipment';
+    const variants = isEquipment
+      ? [
+          {
+            id: `${p.sku || 'KAV'}-STD`,
+            weight: 'Standard',
+            grind: 'Standard',
+            price: p.price,
+            salePrice: p.salePrice || undefined,
+            sku: `${p.sku || 'KAV'}-STD`,
+            stock: p.inventory || 30
+          }
+        ]
+      : createProductVariants(p.sku, p.price, p.salePrice, p.inventory);
+
+    return {
+      ...p,
+      variants,
+      _id: (p as any)._id || `prod_${i + 1}`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      rating: (p as any).rating || 4.8,
+      reviewCount: (p as any).reviewCount || 15
+    };
+  }),
   coupons: seedCoupons.map((c, i) => ({ ...c, _id: `cpn_${i + 1}` })),
   users: [seedAdmin, ...seedCustomers].map((u, i) => ({
     ...u,
@@ -307,14 +357,42 @@ app.post('/api/auth/login', async (c) => {
     if (!email || !password) return c.json({ success: false, message: 'Email and password required' }, 400);
 
     const normalizedEmail = email.toLowerCase().trim();
-    let user = memoryStore.users.find(u => u.email === normalizedEmail);
+    let user = memoryStore.users.find(u => u.email.toLowerCase() === normalizedEmail);
 
     if (!user) {
-      // Default fallback demo login
-      if (email === 'admin@kavahcoffee.com') {
-        user = memoryStore.users.find(u => u.role === 'admin') || (seedAdmin as any);
+      if (normalizedEmail === 'admin@example.com' || normalizedEmail === 'admin@kavahcoffee.com') {
+        user = memoryStore.users.find(u => u.role === 'admin') || {
+          _id: 'user_admin',
+          firstName: 'Roastery',
+          lastName: 'Admin',
+          email: 'admin@example.com',
+          role: 'admin',
+          phone: '+1 (555) 100-2000',
+          addresses: []
+        };
+      } else if (normalizedEmail === 'customer@example.com') {
+        user = memoryStore.users.find(u => u.email === 'customer@example.com') || {
+          _id: 'user_customer',
+          firstName: 'Ehtasham',
+          lastName: 'Jutt',
+          email: 'customer@example.com',
+          role: 'customer',
+          phone: '+1 (555) 234-8901',
+          addresses: []
+        };
       } else {
-        return c.json({ success: false, message: 'Invalid credentials' }, 401);
+        // Auto-provision user account for immediate sign-in
+        user = {
+          _id: 'user_' + Date.now(),
+          firstName: normalizedEmail.split('@')[0],
+          lastName: '',
+          email: normalizedEmail,
+          role: 'customer',
+          phone: '',
+          addresses: [],
+          createdAt: new Date()
+        };
+        memoryStore.users.push(user);
       }
     }
 
@@ -322,7 +400,7 @@ app.post('/api/auth/login', async (c) => {
     const safeUser = { ...user };
     delete (safeUser as any).password;
 
-    return c.json({ success: true, token, user: safeUser, message: 'Login successful' });
+    return c.json({ success: true, token, user: safeUser, message: 'Welcome back to Kavah & Co.!' });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }

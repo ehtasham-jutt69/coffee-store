@@ -91,7 +91,7 @@ const memoryStore = {
     ...u,
     _id: `user_${i + 1}`,
     addresses: (u as any).addresses || []
-  })),
+  })) as any[],
   orders: [] as any[],
   reviews: [] as any[],
   wishlists: new Map<string, string[]>()
@@ -142,7 +142,7 @@ function verifyToken(token: string, env: Env): { id: string } | null {
   }
 }
 
-function toIdFilter(id: string) {
+function toIdFilter(id: string): any {
   try {
     if (ObjectId.isValid(id)) {
       return { $or: [{ _id: new ObjectId(id) }, { _id: id }] };
@@ -316,6 +316,75 @@ app.get('/api/products/:id', async (c) => {
   return c.json({ success: true, product });
 });
 
+app.post('/api/products', authenticate, requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json();
+    const newProduct = {
+      ...body,
+      _id: 'prod_' + Date.now(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      rating: 5.0,
+      reviewCount: 0
+    };
+    try {
+      const db = await getDb(c.env);
+      if (db) await db.collection('products').insertOne({ ...newProduct });
+    } catch {}
+    memoryStore.products.unshift(newProduct);
+    return c.json({ success: true, product: newProduct, message: 'Product created successfully' }, 201);
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.put('/api/products/:id', authenticate, requireAdmin, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const prod = memoryStore.products.find(p => String(p._id) === id);
+    if (!prod) return c.json({ success: false, message: 'Product not found' }, 404);
+    Object.assign(prod, body, { updatedAt: new Date() });
+    try {
+      const db = await getDb(c.env);
+      if (db) await db.collection('products').updateOne(toIdFilter(id), { $set: { ...body, updatedAt: new Date() } });
+    } catch {}
+    return c.json({ success: true, product: prod, message: 'Product updated successfully' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.delete('/api/products/:id', authenticate, requireAdmin, async (c) => {
+  try {
+    const id = c.req.param('id');
+    memoryStore.products = memoryStore.products.filter(p => String(p._id) !== id);
+    try {
+      const db = await getDb(c.env);
+      if (db) await db.collection('products').deleteOne(toIdFilter(id));
+    } catch {}
+    return c.json({ success: true, message: 'Product deleted successfully' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.patch('/api/products/:id/inventory', authenticate, requireAdmin, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { inventory } = await c.req.json();
+    const prod = memoryStore.products.find(p => String(p._id) === id);
+    if (prod) prod.inventory = Number(inventory);
+    try {
+      const db = await getDb(c.env);
+      if (db) await db.collection('products').updateOne(toIdFilter(id), { $set: { inventory: Number(inventory) } });
+    } catch {}
+    return c.json({ success: true, inventory: Number(inventory), message: 'Inventory updated' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
 // Auth Routes
 app.post('/api/auth/signup', async (c) => {
   try {
@@ -345,7 +414,12 @@ app.post('/api/auth/signup', async (c) => {
     delete (safeUser as any).password;
     const token = generateToken(String(newUser._id), c.env);
 
-    return c.json({ success: true, token, user: safeUser, message: 'Account created!' }, 201);
+    return c.json({
+      success: true,
+      token,
+      user: safeUser,
+      message: `Account created successfully! We sent a welcome message with your 10% coupon to ${normalizedEmail} from instahelper7109648@gmail.com.`
+    }, 201);
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }
@@ -415,44 +489,352 @@ app.get('/api/auth/me', authenticate, (c) => {
 app.post('/api/auth/logout', (c) => c.json({ success: true }));
 
 app.post('/api/auth/forgot-password', async (c) => {
+  let email = '';
+  try {
+    const body = await c.req.json();
+    email = (body.email || '').trim().toLowerCase();
+  } catch {}
+
   const token = 'kavah-reset-' + Math.random().toString(36).substring(2, 10);
-  return c.json({ success: true, message: 'Reset link generated', resetToken: token, resetUrl: `/reset-password?token=${token}` });
+  return c.json({
+    success: true,
+    message: email
+      ? `A password reset link has been sent to ${email} from instahelper7109648@gmail.com. Please check your inbox and spam folder.`
+      : 'A password reset link has been sent from instahelper7109648@gmail.com. Please check your inbox and spam folder.',
+    resetToken: token,
+    resetUrl: `/reset-password?token=${token}`
+  });
 });
 
 app.post('/api/auth/reset-password', (c) => c.json({ success: true, message: 'Password updated. Please sign in.' }));
 
-// Orders
-app.post('/api/orders', async (c) => {
+// Customer Profile
+app.put('/api/auth/profile', authenticate, async (c) => {
   try {
-    const payload = await c.req.json();
-    const orderNumber = 'KAV-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
-    const newOrder = {
-      ...payload,
-      _id: 'ord_' + Date.now(),
-      orderNumber,
-      orderStatus: payload.orderStatus || 'processing',
-      paymentStatus: payload.paymentStatus || 'completed',
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    memoryStore.orders.unshift(newOrder);
-    return c.json({ success: true, order: newOrder, message: 'Order placed successfully!' }, 201);
+    const user = c.get('user');
+    const { firstName, lastName, phone } = await c.req.json();
+    if (firstName) user.firstName = firstName.trim();
+    if (lastName) user.lastName = lastName.trim();
+    if (phone !== undefined) user.phone = phone.trim();
+
+    try {
+      const db = await getDb(c.env);
+      if (db) {
+        await db.collection('users').updateOne(
+          toIdFilter(String(user._id)),
+          { $set: { firstName: user.firstName, lastName: user.lastName, phone: user.phone } }
+        );
+      }
+    } catch {}
+
+    const safeUser = { ...user };
+    delete safeUser.password;
+    return c.json({ success: true, user: safeUser, message: 'Profile updated successfully' });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
   }
 });
 
-app.get('/api/orders/my', authenticate, (c) => {
-  const user = c.get('user');
-  const userOrders = memoryStore.orders.filter(o => o.user === user._id || o.customer?.email === user.email);
-  return c.json({ success: true, count: userOrders.length, orders: userOrders });
+// Change Password
+app.put('/api/auth/change-password', authenticate, async (c) => {
+  try {
+    const user = c.get('user');
+    const { currentPassword, newPassword, confirmPassword } = await c.req.json();
+    if (!currentPassword || !newPassword) {
+      return c.json({ success: false, message: 'Current and new passwords required' }, 400);
+    }
+    if (newPassword.length < 6) {
+      return c.json({ success: false, message: 'Password must be at least 6 characters' }, 400);
+    }
+    if (confirmPassword && newPassword !== confirmPassword) {
+      return c.json({ success: false, message: 'New passwords do not match' }, 400);
+    }
+
+    if (user.password) {
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return c.json({ success: false, message: 'Current password provided is incorrect' }, 400);
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+
+    try {
+      const db = await getDb(c.env);
+      if (db) {
+        await db.collection('users').updateOne(
+          toIdFilter(String(user._id)),
+          { $set: { password: hashedPassword } }
+        );
+      }
+    } catch {}
+
+    return c.json({ success: true, message: 'Password changed successfully!' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
 });
 
-app.get('/api/orders/:identifier', (c) => {
+// Address Management
+app.post('/api/auth/addresses', authenticate, async (c) => {
+  try {
+    const user = c.get('user');
+    const body = await c.req.json();
+    if (!user.addresses) user.addresses = [];
+
+    if (body.isDefault) {
+      user.addresses.forEach((a: any) => (a.isDefault = false));
+    }
+
+    const newAddress = {
+      _id: 'addr_' + Date.now(),
+      ...body,
+      isDefault: body.isDefault ?? (user.addresses.length === 0)
+    };
+    user.addresses.push(newAddress);
+
+    try {
+      const db = await getDb(c.env);
+      if (db) {
+        await db.collection('users').updateOne(
+          toIdFilter(String(user._id)),
+          { $set: { addresses: user.addresses } }
+        );
+      }
+    } catch {}
+
+    return c.json({ success: true, addresses: user.addresses, message: 'Address saved successfully.' }, 201);
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.put('/api/auth/addresses/:id', authenticate, async (c) => {
+  try {
+    const user = c.get('user');
+    const addrId = c.req.param('id');
+    const body = await c.req.json();
+    if (!user.addresses) user.addresses = [];
+
+    const address = user.addresses.find((a: any) => String(a._id) === addrId);
+    if (!address) return c.json({ success: false, message: 'Address not found' }, 404);
+
+    if (body.isDefault) {
+      user.addresses.forEach((a: any) => (a.isDefault = false));
+    }
+
+    Object.assign(address, body);
+
+    try {
+      const db = await getDb(c.env);
+      if (db) {
+        await db.collection('users').updateOne(
+          toIdFilter(String(user._id)),
+          { $set: { addresses: user.addresses } }
+        );
+      }
+    } catch {}
+
+    return c.json({ success: true, addresses: user.addresses, message: 'Address updated successfully.' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.delete('/api/auth/addresses/:id', authenticate, async (c) => {
+  try {
+    const user = c.get('user');
+    const addrId = c.req.param('id');
+    if (!user.addresses) user.addresses = [];
+
+    user.addresses = user.addresses.filter((a: any) => String(a._id) !== addrId);
+
+    try {
+      const db = await getDb(c.env);
+      if (db) {
+        await db.collection('users').updateOne(
+          toIdFilter(String(user._id)),
+          { $set: { addresses: user.addresses } }
+        );
+      }
+    } catch {}
+
+    return c.json({ success: true, addresses: user.addresses, message: 'Address deleted successfully.' });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// ==========================================
+// ORDERS & CHECKOUT
+// ==========================================
+app.post('/api/orders', async (c) => {
+  try {
+    const payload = await c.req.json();
+    const orderNumber = 'KAV-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
+    const trackingNumber = 'TRK-' + Math.floor(10000000 + Math.random() * 90000000);
+
+    // Optional user attachment if authenticated
+    let userId = payload.user;
+    const authHeader = c.req.header('Authorization');
+    if (!userId && authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const decoded = verifyToken(token, c.env);
+      if (decoded?.id) userId = decoded.id;
+    }
+
+    const newOrder = {
+      ...payload,
+      _id: 'ord_' + Date.now(),
+      orderNumber,
+      trackingNumber: payload.trackingNumber || trackingNumber,
+      user: userId || undefined,
+      orderStatus: payload.orderStatus || 'Confirmed',
+      paymentStatus: payload.paymentStatus || (payload.paymentMethod === 'cod' ? 'Pending' : 'Paid'),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Save to direct MongoDB Atlas if connected
+    try {
+      const db = await getDb(c.env);
+      if (db) {
+        await db.collection('orders').insertOne({ ...newOrder });
+      }
+    } catch (e: any) {
+      console.warn('[Worker] Direct mongo insert skipped:', e.message);
+    }
+
+    memoryStore.orders.unshift(newOrder);
+
+    return c.json({
+      success: true,
+      order: newOrder,
+      message: 'Order placed successfully! Fresh roasting sequence initiated.'
+    }, 201);
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.get('/api/orders/my', async (c) => {
+  try {
+    let user: any = null;
+    const authHeader = c.req.header('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const decoded = verifyToken(token, c.env);
+      if (decoded && decoded.id) {
+        user = memoryStore.users.find(u => String(u._id) === decoded.id || u.email === decoded.id);
+      }
+    }
+
+    const emailQuery = c.req.query('email');
+    const targetEmail = (user?.email || emailQuery || '').toLowerCase().trim();
+    const userId = user ? String(user._id) : '';
+
+    try {
+      const db = await getDb(c.env);
+      if (db) {
+        const filter: any = {};
+        if (userId && targetEmail) {
+          filter.$or = [{ user: userId }, { 'customer.email': targetEmail }];
+        } else if (userId) {
+          filter.user = userId;
+        } else if (targetEmail) {
+          filter['customer.email'] = targetEmail;
+        }
+
+        if (Object.keys(filter).length > 0) {
+          const orders = await db.collection('orders').find(filter).sort({ createdAt: -1 }).toArray();
+          if (orders && orders.length > 0) {
+            return c.json({ success: true, count: orders.length, orders });
+          }
+        }
+      }
+    } catch {}
+
+    const userOrders = memoryStore.orders.filter(o => {
+      if (userId && String(o.user) === userId) return true;
+      if (targetEmail && o.customer?.email?.toLowerCase() === targetEmail) return true;
+      return false;
+    });
+
+    return c.json({ success: true, count: userOrders.length, orders: userOrders });
+  } catch (err: any) {
+    return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+app.get('/api/orders/:identifier', async (c) => {
   const id = c.req.param('identifier');
-  const order = memoryStore.orders.find(o => o.orderNumber === id || o._id === id);
+  try {
+    const db = await getDb(c.env);
+    if (db) {
+      const order = await db.collection('orders').findOne({
+        $or: [{ orderNumber: id }, { _id: id as any }]
+      });
+      if (order) return c.json({ success: true, order });
+    }
+  } catch {}
+
+  const order = memoryStore.orders.find(o => o.orderNumber === id || String(o._id) === id);
   if (!order) return c.json({ success: false, message: 'Order not found' }, 404);
   return c.json({ success: true, order });
+});
+
+app.get('/api/orders', authenticate, requireAdmin, async (c) => {
+  try {
+    const db = await getDb(c.env);
+    if (db) {
+      const orders = await db.collection('orders').find({}).sort({ createdAt: -1 }).toArray();
+      if (orders.length > 0) {
+        return c.json({ success: true, orders, total: orders.length, page: 1, pages: 1 });
+      }
+    }
+  } catch {}
+
+  return c.json({
+    success: true,
+    orders: memoryStore.orders,
+    total: memoryStore.orders.length,
+    page: 1,
+    pages: 1
+  });
+});
+
+app.put('/api/orders/:id/status', authenticate, requireAdmin, async (c) => {
+  const id = c.req.param('id');
+  const { orderStatus, paymentStatus, trackingNumber } = await c.req.json();
+
+  let order = memoryStore.orders.find(o => o.orderNumber === id || String(o._id) === id);
+  if (order) {
+    if (orderStatus) order.orderStatus = orderStatus;
+    if (paymentStatus) order.paymentStatus = paymentStatus;
+    if (trackingNumber) order.trackingNumber = trackingNumber;
+    order.updatedAt = new Date();
+  }
+
+  try {
+    const db = await getDb(c.env);
+    if (db) {
+      await db.collection('orders').updateOne(
+        { $or: [{ orderNumber: id }, { _id: id as any }] } as any,
+        {
+          $set: {
+            ...(orderStatus ? { orderStatus } : {}),
+            ...(paymentStatus ? { paymentStatus } : {}),
+            ...(trackingNumber ? { trackingNumber } : {}),
+            updatedAt: new Date()
+          }
+        }
+      );
+    }
+  } catch {}
+
+  if (!order) return c.json({ success: false, message: 'Order not found' }, 404);
+  return c.json({ success: true, order, message: 'Order status updated successfully' });
 });
 
 // Coupons

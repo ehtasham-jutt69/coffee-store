@@ -14,7 +14,9 @@ import couponRoutes from './routes/couponRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import wishlistRoutes from './routes/wishlistRoutes';
 import adminRoutes from './routes/adminRoutes';
+import { verifyEmailConfig } from './services/emailService';
 
+// Load environment variables (Gmail / Brevo SMTP & Database)
 dotenv.config();
 
 const app = express();
@@ -66,6 +68,9 @@ const startServer = async () => {
       console.log('[Bootstrap] No products found in database. Auto-seeding initial specialty catalog...');
       await runSeed(false);
     }
+
+    // Initialize & verify email notification service
+    await verifyEmailConfig();
 
     app.listen(PORT, () => {
       console.log(`☕ Kavah & Co. REST API listening on http://localhost:${PORT}`);

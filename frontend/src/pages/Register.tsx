@@ -87,7 +87,7 @@ export const Register: React.FC = () => {
             Create Coffee Account
           </h1>
           <p className="text-xs sm:text-sm text-espresso-400 mt-1 max-w-sm mx-auto">
-            Sign up with your email and password to track orders, save roast preferences, and unlock club perks.
+            Sign up to unlock 10% off your first roast order. A welcome confirmation will be sent to your inbox from <span className="text-amber-400">instahelper7109648@gmail.com</span>.
           </p>
         </div>
 

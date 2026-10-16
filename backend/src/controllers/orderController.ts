@@ -237,12 +237,13 @@ export const getMyOrders = async (req: AuthRequest, res: Response): Promise<void
 export const getOrderById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { identifier } = req.params;
+    const idStr = String(identifier);
 
     let order = null;
-    if (identifier.startsWith('KAV-')) {
-      order = await Order.findOne({ orderNumber: identifier });
+    if (idStr.startsWith('KAV-')) {
+      order = await Order.findOne({ orderNumber: idStr });
     } else {
-      order = await Order.findById(identifier);
+      order = await Order.findById(idStr);
     }
 
     if (!order) {

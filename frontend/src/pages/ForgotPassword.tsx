@@ -11,6 +11,7 @@ export const ForgotPassword: React.FC = () => {
     token: string;
     url: string;
   } | null>(null);
+  const [serverMessage, setServerMessage] = useState<string>('');
 
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ export const ForgotPassword: React.FC = () => {
       const res = await api.forgotPassword(email.trim().toLowerCase());
 
       if (res.success) {
+        setServerMessage(res.message || '');
         showToast(res.message || 'Password reset link generated.');
         if (res.resetToken) {
           setResetGenerated({
@@ -56,7 +58,7 @@ export const ForgotPassword: React.FC = () => {
             Reset Your Password
           </h1>
           <p className="text-xs sm:text-sm text-espresso-400 mt-1 max-w-sm mx-auto">
-            Enter your registered email address and we'll generate a secure reset link for your account.
+            Enter your registered email address and we'll send a secure password reset link to your inbox from <span className="text-amber-400">instahelper7109648@gmail.com</span>.
           </p>
         </div>
 
@@ -69,21 +71,24 @@ export const ForgotPassword: React.FC = () => {
               </div>
 
               <div>
-                <h3 className="font-serif text-lg font-bold text-white">
-                  Reset Token Generated
+                <h3 className="font-serif text-lg sm:text-xl font-bold text-white">
+                  Reset Link Dispatched!
                 </h3>
                 <p className="text-xs text-espresso-300 mt-2 leading-relaxed">
-                  For your email <strong className="text-amber-300 font-mono">{email}</strong>, a secure password reset token has been issued.
+                  {serverMessage || `We've sent a secure password reset link to ${email} from instahelper7109648@gmail.com.`}
+                </p>
+                <p className="text-[11px] text-espresso-400 mt-1">
+                  Please check your inbox (and spam or junk folder if not seen within 1–2 minutes).
                 </p>
               </div>
 
               {/* Instant Reset Action */}
               <div className="p-4 bg-espresso-950 rounded-2xl border border-amber-500/30 text-left space-y-3">
                 <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider block">
-                  Direct Password Reset Link
+                  Quick Direct Link (Instant Access)
                 </span>
                 <p className="text-[11px] text-espresso-400">
-                  Click the button below to set a new password right away:
+                  You can also click the button below to set a new password right away:
                 </p>
                 <button
                   onClick={() => navigate(resetGenerated.url)}

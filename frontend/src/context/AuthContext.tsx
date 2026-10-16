@@ -86,7 +86,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.setItem('kavah_token', res.token);
         setToken(res.token);
         setUser(res.user);
-        showToast('Welcome to Kavah! Account created successfully.');
+        showToast(res.message || 'Welcome to Kavah! Account created successfully.');
         return true;
       }
       return false;

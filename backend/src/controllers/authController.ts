@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { User, IUser } from '../models/User';
 import { AuthRequest } from '../middleware/auth';
+import { sendWelcomeEmail, sendPasswordResetEmail, isEmailConfigured } from '../services/emailService';
 
 const generateToken = (id: string): string => {
   const secret = process.env.JWT_SECRET || 'super_secret_kavah_coffee_jwt_key_2026_dev';
@@ -60,9 +61,17 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
 
     const token = generateToken(user._id.toString());
 
+    const configured = isEmailConfigured();
+    // Send Welcome Email asynchronously from instahelper7109648@gmail.com
+    sendWelcomeEmail(user.email, user.firstName).catch((err) => {
+      console.error('[Signup] Error sending welcome email:', err.message);
+    });
+
     res.status(201).json({
       success: true,
-      message: 'Account created successfully! Welcome to Kavah & Co.',
+      message: configured
+        ? `Account created successfully! We sent a welcome message with your 10% coupon to ${user.email} from instahelper7109648@gmail.com.`
+        : `Account created successfully! (Note: Real email delivery to ${user.email} requires setting EMAIL_PASS in backend/.env).`,
       token,
       user: {
         id: user._id,
@@ -146,7 +155,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       // Return positive generic message to prevent email enumeration
       res.status(200).json({
         success: true,
-        message: 'If an account exists with this email, password reset instructions have been generated.'
+        message: 'If an account exists with this email, password reset instructions have been sent from instahelper7109648@gmail.com.'
       });
       return;
     }
@@ -158,9 +167,14 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 
     await user.save({ validateBeforeSave: false });
 
+    // Send Password Reset Email from instahelper7109648@gmail.com
+    const emailResult = await sendPasswordResetEmail(user.email, user.firstName, resetToken);
+
     res.status(200).json({
       success: true,
-      message: 'Password reset token generated successfully.',
+      message: emailResult.success
+        ? `A password reset link has been sent to ${user.email} from instahelper7109648@gmail.com. Please check your inbox and spam folder.`
+        : `Password reset token generated! (To send to your real inbox, add EMAIL_PASS to backend/.env). You can use the direct link below.`,
       resetToken, // Provided in response for easy local testing & development
       resetUrl: `/reset-password?token=${resetToken}`
     });

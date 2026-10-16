@@ -237,7 +237,7 @@ export const runSeed = async (silent = false): Promise<void> => {
         tax,
         total,
         paymentMethod: i % 2 === 0 ? 'credit_card' : 'test_payment',
-        paymentStatus: status === 'Cancelled' ? 'Failed' : 'Paid',
+        paymentStatus: (status as string) === 'Cancelled' ? 'Failed' : 'Paid',
         orderStatus: status,
         trackingNumber: `TRK-${48920000 + i}`,
         createdAt: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)

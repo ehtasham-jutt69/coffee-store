@@ -37,17 +37,18 @@ export const addToWishlist = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const { productId } = req.params;
+    const productIdStr = String(productId);
     let wishlist = await Wishlist.findOne({ user: req.user._id });
 
     if (!wishlist) {
       wishlist = await Wishlist.create({
         user: req.user._id,
-        products: [new mongoose.Types.ObjectId(productId)]
+        products: [new mongoose.Types.ObjectId(productIdStr)]
       });
     } else {
-      const exists = wishlist.products.some(p => p.toString() === productId);
+      const exists = wishlist.products.some(p => p.toString() === productIdStr);
       if (!exists) {
-        wishlist.products.push(new mongoose.Types.ObjectId(productId));
+        wishlist.products.push(new mongoose.Types.ObjectId(productIdStr));
         await wishlist.save();
       }
     }

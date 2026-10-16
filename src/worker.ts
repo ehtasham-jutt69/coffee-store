@@ -4,8 +4,15 @@ import { MongoClient, ObjectId } from 'mongodb';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { seedCategories, seedProducts, seedCoupons, seedAdmin, seedCustomers } from './seedData';
+import {
+  sendEdgeEmail,
+  sendEdgeWelcomeEmail,
+  sendEdgePasswordResetEmail,
+  sendEdgeOrderConfirmationEmail,
+  EmailEnv
+} from './edgeEmail';
 
-export interface Env {
+export interface Env extends EmailEnv {
   MONGODB_URI?: string;
   JWT_SECRET?: string;
   ASSETS?: {
@@ -414,6 +421,17 @@ app.post('/api/auth/signup', async (c) => {
     delete (safeUser as any).password;
     const token = generateToken(String(newUser._id), c.env);
 
+    // Dispatch welcome email asynchronously via Cloudflare edge sockets
+    try {
+      c.executionCtx.waitUntil(
+        sendEdgeWelcomeEmail(c.env, normalizedEmail, firstName).catch(err => {
+          console.error('[Worker] Error sending welcome email:', err);
+        })
+      );
+    } catch {
+      sendEdgeWelcomeEmail(c.env, normalizedEmail, firstName).catch(() => {});
+    }
+
     return c.json({
       success: true,
       token,
@@ -496,13 +514,28 @@ app.post('/api/auth/forgot-password', async (c) => {
   } catch {}
 
   const token = 'kavah-reset-' + Math.random().toString(36).substring(2, 10);
+  const resetUrl = `/reset-password?token=${token}`;
+
+  // Dispatch password reset email asynchronously via Cloudflare edge sockets
+  if (email) {
+    try {
+      c.executionCtx.waitUntil(
+        sendEdgePasswordResetEmail(c.env, email, token, resetUrl).catch(err => {
+          console.error('[Worker] Error sending password reset email:', err);
+        })
+      );
+    } catch {
+      sendEdgePasswordResetEmail(c.env, email, token, resetUrl).catch(() => {});
+    }
+  }
+
   return c.json({
     success: true,
     message: email
       ? `A password reset link has been sent to ${email} from instahelper7109648@gmail.com. Please check your inbox and spam folder.`
       : 'A password reset link has been sent from instahelper7109648@gmail.com. Please check your inbox and spam folder.',
     resetToken: token,
-    resetUrl: `/reset-password?token=${token}`
+    resetUrl
   });
 });
 
@@ -708,6 +741,19 @@ app.post('/api/orders', async (c) => {
 
     memoryStore.orders.unshift(newOrder);
 
+    // Dispatch Order Confirmation Email asynchronously via Cloudflare edge sockets
+    if (newOrder.customer?.email) {
+      try {
+        c.executionCtx.waitUntil(
+          sendEdgeOrderConfirmationEmail(c.env, newOrder).catch(err => {
+            console.error('[Worker] Error sending order confirmation email:', err);
+          })
+        );
+      } catch {
+        sendEdgeOrderConfirmationEmail(c.env, newOrder).catch(() => {});
+      }
+    }
+
     return c.json({
       success: true,
       order: newOrder,
@@ -715,6 +761,34 @@ app.post('/api/orders', async (c) => {
     }, 201);
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
+  }
+});
+
+// Direct test email route for instant verification
+app.post('/api/test-email', async (c) => {
+  try {
+    let toEmail = 'instahelper7109648@gmail.com';
+    try {
+      const body = await c.req.json();
+      if (body.to) toEmail = body.to;
+    } catch {}
+
+    const res = await sendEdgeEmail(c.env, {
+      to: toEmail,
+      subject: '☕ Test Email from Cloudflare Worker Edge',
+      html: `
+        <div style="font-family: sans-serif; background: #160c07; color: #f5ede6; padding: 30px; border-radius: 12px;">
+          <h2 style="color: #fbbf24;">Kavah & Co. Edge Email System Operational!</h2>
+          <p>This email was delivered directly from Cloudflare Workers edge via Brevo SMTP relay.</p>
+          <p style="color: #c5a880; font-size: 12px;">Timestamp: ${new Date().toISOString()}</p>
+        </div>
+      `,
+      text: `Kavah & Co. Edge Email System Operational! This email was delivered directly from Cloudflare Workers edge via Brevo SMTP relay. Timestamp: ${new Date().toISOString()}`
+    });
+
+    return c.json({ success: res.success, error: res.error, targetEmail: toEmail });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500);
   }
 });
 

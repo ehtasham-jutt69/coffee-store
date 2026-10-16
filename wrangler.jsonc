@@ -6,6 +6,13 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "vars": {
+    "SMTP_HOST": "smtp-relay.brevo.com",
+    "SMTP_PORT": "587",
+    "SMTP_USER": "be4fb3001@smtp-brevo.com",
+    "EMAIL_USER": "instahelper7109648@gmail.com",
+    "EMAIL_FROM_NAME": "Kavah & Co. Artisanal Roasters"
+  },
   "assets": {
     "directory": "./frontend/dist",
     "not_found_handling": "single-page-application",
